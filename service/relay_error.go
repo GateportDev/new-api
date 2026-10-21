@@ -1,6 +1,8 @@
 package service
 
 import (
+	"os"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -73,7 +75,7 @@ func ProcessChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		})
 	}
 
-	if constant.ErrorLogEnabled && types.IsRecordErrorLog(err) {
+	if constant.ErrorLogEnabled && types.IsRecordErrorLog(err) && !isSuppressedErrorLog(err) {
 		userId := c.GetInt("id")
 		tokenName := c.GetString("token_name")
 		modelName := c.GetString("original_model")
@@ -96,4 +98,28 @@ func ProcessChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		useTimeSeconds := int(time.Since(startTime).Seconds())
 		model.RecordErrorLog(c, userId, channelError.ChannelId, modelName, tokenName, err.MaskSensitiveErrorWithStatusCode(upstreamURLs...), tokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), userGroup, other)
 	}
+}
+
+// errorLogSuppressedCodes 列出“内部容量”类错误码：这类错误会在本次请求内自动重试到
+// 下一个渠道，属于调度内部行为，不应写成用户可见的错误日志。
+// 可用环境变量 ERROR_LOG_SUPPRESS_CODES 覆盖（逗号分隔）。
+var errorLogSuppressedCodes = func() map[string]bool {
+	codes := []string{"gate_concurrency_limit", "gateway_concurrency_limit"}
+	if raw := strings.TrimSpace(os.Getenv("ERROR_LOG_SUPPRESS_CODES")); raw != "" {
+		codes = strings.Split(raw, ",")
+	}
+	m := make(map[string]bool, len(codes))
+	for _, code := range codes {
+		if code = strings.TrimSpace(code); code != "" {
+			m[code] = true
+		}
+	}
+	return m
+}()
+
+func isSuppressedErrorLog(err *types.NewAPIError) bool {
+	if err == nil {
+		return false
+	}
+	return errorLogSuppressedCodes[string(err.GetErrorCode())]
 }
