@@ -69,6 +69,7 @@ func runProgram(prog *vm.Program, requestRules []RequestRuleTrace, usedVars map[
 
 	env := map[string]any{
 		"image_count": float64(imageCount),
+		"size_tier":   sizeTierFromBody(request.Body),
 		"p":           params.P,
 		"c":           params.C,
 		"len":         params.Len,
